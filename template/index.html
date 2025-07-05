@@ -75,7 +75,7 @@
       border-top: 1px solid #ccc;
       flex-shrink: 0;
       position: fixed;
-      bottom: env(safe-area-inset-bottom);
+      bottom: calc(env(safe-area-inset-bottom) + 2px);
       left: 0;
       right: 0;
       z-index: 100;
@@ -238,11 +238,11 @@
         right: -100%;
         top: 0;
         width: 80%;
-        height: calc(100vh - 70px - env(safe-area-inset-bottom));
+        height: calc(100vh - 90px - env(safe-area-inset-bottom));
         z-index: 1000;
         transition: right 0.3s ease;
         background: #d0d0d0;
-        padding-bottom: 0;
+        padding-bottom: 10px;
       }
       .info-panel.show {
         right: 0;
@@ -268,9 +268,9 @@
         height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
       }
       .chat-messages {
-        height: calc(100vh - 80px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+        height: calc(100vh - 90px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
         overflow-y: auto;
-        padding-bottom: 20px;
+        padding-bottom: 30px;
       }
       .speech-bubble {
         font-size: 14px;
