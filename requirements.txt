@@ -1,0 +1,13 @@
+pandas
+numpy
+requests
+pydantic
+pykrx
+yfinance
+python-dotenv
+fastapi
+jinja2
+matplotlib
+google-generativeai
+uvicorn[standard]
+statsmodels
