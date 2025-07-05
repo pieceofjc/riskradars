@@ -2,12 +2,23 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <link rel="shortcut icon" href="/static/favicon.ico" type="image/x-icon">
   <title>기업 분석 대시보드</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: 'Segoe UI', sans-serif; background: #f5f5f5; height: 100vh; overflow: hidden; }
-    .container { display: flex; height: 100%; }
+    body, html {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+    }
+
+    .container {
+      height: 100dvh;
+      display: flex;
+    }
     .chat-area {
+      position: relative;
       flex: 2;
       background: #dadada;
       display: flex;
@@ -27,7 +38,7 @@
       padding: 15px;
       border-radius: 10px;
       margin-bottom: 20px;
-      line-height: 1.5;
+      line-height: 1.8;
       word-wrap: break-word;
     }
     .user-bubble {
@@ -114,25 +125,12 @@
       text-align: center;
       padding: 10px;
     }
-    .word{
-      font-size: 1.5rem;
-    }
-    .betawordfirst{
-      font-size: 1.35rem;
-      padding-top: 15.5px;
-    }
-    .betaword{
-      font-size: 1.35rem;
-    }
+    .word { font-size: 1.5rem; }
+    .betawordfirst { font-size: 1.35rem; padding-top: 15.5px; }
+    .betaword { font-size: 1.35rem; }
     .card div:first-child {
       margin-bottom: 5px;
       font-weight: bold;
-    }
-    .legend {
-      display: flex;
-      justify-content: space-between;
-      font-size: 1rem;
-      margin-top: 10px;
     }
     .chart-placeholder {
       height: auto;
@@ -143,13 +141,13 @@
       justify-content: center;
       color: #999;
       font-style: italic;
-      overflow: visible; /* 이미지 잘림 방지 */
+      overflow: visible;
     }
     #stock-chart {
       width: 100%;
       height: auto;
       border-radius: 8px;
-      object-fit: contain; /* 이미지 왜곡 방지 */
+      object-fit: contain;
     }
     .opinion-buttons {
       display: flex;
@@ -161,12 +159,16 @@
       border: none;
       border-radius: 10px;
       color: #fff;
-      cursor: pointer;
       font-size: 1.2rem;
+      background-color: #bfbfbf;
+      cursor: default;
     }
-
-    .btn-sell   { background: #3873c6; }
-    .btn-buy    { background: #65d24f; }
+    .active-defaulted {
+      background-color: red !important;
+    }
+    .active-normal {
+      background-color: green !important;
+    }
     .positive { color: #ed3737; }
     .negative { color: #3873c6; }
     .return-value {
@@ -174,18 +176,15 @@
       font-weight: bold;
       margin-bottom: 5px;
     }
-
     .return-amount {
       font-size: 1.2rem;
     }
-
-    /* 중앙 이미지 오버레이 */
     .center-image-overlay {
-      position: fixed;
+      position: absolute;
       top: 50%;
-      left: 30%;
+      left: 50%;
       transform: translate(-50%, -50%);
-      z-index: 1;
+      z-index: 0;
       pointer-events: none;
     }
     .center-image-overlay img {
@@ -193,35 +192,55 @@
       height: auto;
       opacity: 0.5;
     }
+    .warning-message {
+      margin-top: 10px;
+      color: red;
+      font-size: 1.2rem;
+      text-align: center;
+    }
+    .markdown-content {
+      line-height: 1.8;
+    }
+    .markdown-content p {
+      margin-bottom: 12px;
+    }
   </style>
 </head>
+
 <body>
 <div class="container">
   <div class="chat-area" id="chat-area">
+    <div class="center-image-overlay">
+      <img src="/static/img/center_image.jpg" alt="중앙 이미지">
+    </div>
     <div class="chat-messages" id="chat-messages"></div>
     <div class="input-area">
-      <input id="chat-input" type="text" placeholder="종목명 또는 종목코드 입력 (예: 삼성전자, 005930)">
+      <input id="chat-input" type="text" placeholder="기업 이름 입력 (예: 삼성전자, SK하이닉스)">
       <button id="chat-send" aria-label="검색">🔍</button>
     </div>
   </div>
+
   <div class="info-panel">
     <h2>부가정보창</h2>
     <div class="section">
       <strong>Risk Radar의 부실예측의견</strong>
       <div class="opinion-buttons">
-        <button class="btn btn-sell">부실</button>
-        <button class="btn btn-buy">정상</button>
+        <div class="btn" id="btn-defaulted">부실</div>
+        <div class="btn" id="btn-normal">정상</div>
       </div>
+      <div id="warning-message" class="warning-message" style="display:none;">부실 예측 결과가 없습니다</div>
     </div>
+
     <div class="section">
       <strong>차트(예상주가변화)</strong>
       <div class="chart-placeholder">
-        <img id="stock-chart" src="/plot.png?ticker=default&_=" alt="주가 예측 차트"/>
+        <img id="stock-chart" src="/plot.png?ticker=default&_=" alt="주가 예측 차트">
       </div>
     </div>
+
     <div class="section">
-      <strong>과거기간별 수익/손실율</strong>
-      <div class="word">100만원 투자시 과거기간별 수익율</div>
+      <strong>과거기간별 수익율</strong>
+      <div class="word">- 100만원 투자시 과거기간별 수익율</div>
       <div class="cards">
         <div class="card">
           <div class="won">1년전 투자시</div>
@@ -232,107 +251,94 @@
           <div id="return-3y">N</div>
         </div>
       </div>
-      <div>-----------------------------------------------------------</div>
-      <div class="word">1년 , 3년 변동성(β) 평균</div>
+      <hr>
+      <div class="word">- 시장(코스피, 코스닥)에 따라 흔들리는 정도(β)</div>
       <div class="cards">
         <div class="card">
-          <div>1년 변동성 평균</div>
+          <div>1년 민감도</div>
           <div id="beta_1y">N</div>
         </div>
         <div class="card">
-          <div>3년 변동성 평균</div>
+          <div>3년 민감도</div>
           <div id="beta_3y">N</div>
         </div>
       </div>
-      <div class="betawordfirst">🎢 변동성(베타 : β)이란 : 시장(코스피,코스닥)이 오르내릴 때,</div>
-      <div class="betaword">이 주식이 얼마나 민감하게 움직이는지</div>
-      <div class="betawordfirst">✅ 변동성(β)예시1️⃣ : 코스피가 1%📈상승할때 -></div>
-      <div class="betaword">어떤주식이 3%📈상승한다면 해당 주식의 변동성(β)은 = 3</div>
-      <div class="betawordfirst">✅ 변동성(β)예시2️⃣ : 코스피가 1%📈상승할때 -></div>
-      <div class="betaword">어떤주식이 3%📉하락한다면 해당 주식의 변동성(β)은 = -3</div>
-      </div>
+      <div class="betawordfirst">🎢 민감도(베타 : β)란 : 시장(코스피,코스닥)이 오르내릴 때,</div>
+      <div class="betaword">이 주식이 얼마나 민감하게 움직이는 지를 나타냄</div>
+      <div class="betawordfirst">1️⃣ 코스피가 1%📈 상승할 때 -></div>
+      <div class="betaword">어떤주식이 3%📈 상승한다면 해당 주식의 민감도(β)는 3</div>
+      <div class="betawordfirst">2️⃣ 코스피가 1%📈 상승할 때 -></div>
+      <div class="betaword">어떤주식이 3%📉 하락한다면 해당 주식의 민감도(β)는 -3</div>
     </div>
   </div>
 </div>
 
-<!-- 중앙 이미지 오버레이 -->
-<div class="center-image-overlay">
-  <img src="/static/img/center_image.jpg" alt="중앙 이미지">
-</div>
-<!-- 모달 -->
 <div id="image-modal" style="display:none; position:fixed; z-index:1000; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,0.8); align-items:center; justify-content:center;">
   <img id="modal-img" src="" style="max-width:90%; max-height:90%; border-radius:10px;" alt="확대 이미지">
 </div>
+
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script>
-  let selectedTicker = '';  // 변수명 통일
-  document.addEventListener('DOMContentLoaded', function () {
+let selectedTicker = '';
+
+document.addEventListener('DOMContentLoaded', function () {
   const input = document.getElementById('chat-input');
   const button = document.getElementById('chat-send');
   const chatMessages = document.getElementById('chat-messages');
-  const r1 = document.getElementById('return-1y');
-  const b1 = document.getElementById('beta_1y');
-  const r3 = document.getElementById('return-3y');
-  const b3 = document.getElementById('beta_3y');
   const stockChart = document.getElementById('stock-chart');
-  // 초기 차트 이미지 설정
-  stockChart.src = `/plot.png?ticker=${selectedTicker || 'default'}&_=${new Date().getTime()}`;
+  const r1 = document.getElementById('return-1y');
+  const r3 = document.getElementById('return-3y');
+  const b1 = document.getElementById('beta_1y');
+  const b3 = document.getElementById('beta_3y');
+  const btnDefaulted = document.getElementById('btn-defaulted');
+  const btnNormal = document.getElementById('btn-normal');
+  const warningMessage = document.getElementById('warning-message');
 
+  stockChart.src = `/plot.png?ticker=${selectedTicker || 'default'}&_=${new Date().getTime()}`;
   marked.setOptions({ breaks: true, gfm: true });
 
   function addBubble(text, isUser) {
     const div = document.createElement('div');
     div.className = 'speech-bubble ' + (isUser ? 'user-bubble' : 'bot-bubble');
-    if (isUser) {
-      div.innerHTML = text.replace(/\n/g, '<br>');
-    } else {
-      div.innerHTML = `<div class="markdown-content">${marked.parse(text)}</div>`;
-    }
+    div.innerHTML = isUser ? text.replace(/\n/g, '<br>') : `<div class="markdown-content">${marked.parse(text)}</div>`;
     chatMessages.appendChild(div);
     chatMessages.scrollTop = chatMessages.scrollHeight;
   }
-  // 모달 관련 요소
-    const modal = document.getElementById('image-modal');
-    const modalImg = document.getElementById('modal-img');
 
-    // 이미지 클릭 시 모달 열기
-    stockChart.addEventListener('click', function () {
-      modalImg.src = stockChart.src;
-      modal.style.display = 'flex';
-    });
-
-    // 모달 클릭 시 닫기
-    modal.addEventListener('click', function () {
-      modal.style.display = 'none';
-    });
-
-  // 수익율 비교 코드
   function setReturnAmount(element, returnRate) {
     const investment = 1000000;
     if (returnRate === null || isNaN(returnRate)) {
       element.innerHTML = '<div class="return-value">N</div>';
-      element.className = '';
       return;
     }
     const rate = Number(returnRate);
     const finalAmount = investment * (1 + rate / 100);
-    const rateText = rate.toFixed(2) + '%';
-    const finalAmountText = Math.round(finalAmount).toLocaleString() + '원';
     element.innerHTML = `
-      <div class="return-value ${rate < 0 ? 'negative' : 'positive'}">${rateText}</div>
-      <div class="return-amount">${finalAmountText}</div>
+      <div class="return-value ${rate < 0 ? 'negative' : 'positive'}">${rate.toFixed(2)}%</div>
+      <div class="return-amount">${Math.round(finalAmount).toLocaleString()}원</div>
     `;
   }
-  
-  // 베타 값 업데이트 함수
+
   function setBetaValue(elementId, betaValue) {
     const betaElement = document.getElementById(elementId);
-    if (betaValue === null || isNaN(betaValue)) {
-      betaElement.textContent = 'N';
-      return;
+    betaElement.textContent = (betaValue === null || isNaN(betaValue)) ? 'N' : parseFloat(betaValue).toFixed(2);
+  }
+
+  function updateDefaultedButtons(isDefaulted) {
+    btnDefaulted.classList.remove('active-defaulted');
+    btnNormal.classList.remove('active-normal');
+    warningMessage.style.display = 'none';
+
+    // 숫자로 변환하여 비교
+    const defaultedValue = Number(isDefaulted);
+
+    if (defaultedValue === 1) {
+      btnDefaulted.classList.add('active-defaulted');
+    } else if (defaultedValue === 0) {
+      btnNormal.classList.add('active-normal');
+    } else {
+      warningMessage.style.display = 'block';
     }
-    const formatted = parseFloat(betaValue).toFixed(2);
-    betaElement.textContent = formatted;
   }
 
   async function sendMessage() {
@@ -348,30 +354,38 @@
         body: JSON.stringify({ message: msg })
       });
       const data = await res.json();
-      addBubble(data.reply, false);
 
+
+
+      addBubble(data.reply, false);
       setReturnAmount(r1, data.return_1y);
       setReturnAmount(r3, data.return_3y);
+      setBetaValue('beta_1y', data.beta_1y);
+      setBetaValue('beta_3y', data.beta_3y);
+      
+      updateDefaultedButtons(data.is_defaulted);
 
-      setBetaValue("beta_1y", data.beta_1y);
-      setBetaValue("beta_3y", data.beta_3y);
-
-      // 티커명이 있을 때 차트 이미지 URL 갱신
-        if (data.name && data.name !== '') {
-          selectedTicker = data.stock_code;
-          stockChart.src = `/plot.png?ticker=${selectedTicker}&_=${new Date().getTime()}`;
-        }
-    } catch (e) {
+      if (data.name && data.name !== '') {
+        selectedTicker = data.stock_code;
+        stockChart.src = `/plot.png?ticker=${selectedTicker}&_=${new Date().getTime()}`;
+      }
+    } catch (error) {
+      console.error('API 오류:', error);
       addBubble('API 오류가 발생했습니다.', false);
     }
   }
 
-  button.addEventListener('click', sendMessage);
-  input.addEventListener('keydown', function (e) {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      sendMessage();
-    }
+  document.getElementById('chat-send').addEventListener('click', sendMessage);
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') sendMessage(); });
+
+  // 모달 이미지 클릭
+  document.getElementById('stock-chart').addEventListener('click', () => {
+    const modal = document.getElementById('image-modal');
+    document.getElementById('modal-img').src = stockChart.src;
+    modal.style.display = 'flex';
+  });
+  document.getElementById('image-modal').addEventListener('click', () => {
+    document.getElementById('image-modal').style.display = 'none';
   });
 });
 </script>
