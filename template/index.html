@@ -14,8 +14,10 @@
     }
 
     .container {
-      height: 100dvh;
+      height: 100vh;
+      min-height: 100vh;
       display: flex;
+      padding-bottom: env(safe-area-inset-bottom);
     }
     .chat-area {
       position: relative;
@@ -68,6 +70,7 @@
     .input-area {
       display: flex;
       padding: 10px;
+      padding-bottom: calc(10px + env(safe-area-inset-bottom));
       background: #fff;
       border-top: 1px solid #ccc;
       flex-shrink: 0;
@@ -153,15 +156,22 @@
       display: flex;
       justify-content: space-around;
       margin-top: 10px;
+      gap: 10px;
     }
     .btn {
-      padding: 10px 120px;
+      padding: 10px 60px;
       border: none;
       border-radius: 10px;
       color: #fff;
       font-size: 1.2rem;
       background-color: #bfbfbf;
       cursor: default;
+      flex: 1;
+      min-width: 0;
+      text-align: center;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
     .active-defaulted {
       background-color: red !important;
@@ -204,11 +214,104 @@
     .markdown-content p {
       margin-bottom: 12px;
     }
+    
+    /* 태블릿 반응형 */
+    @media (max-width: 1024px) {
+      .info-panel {
+        width: 500px;
+      }
+    }
+    
+    /* 모바일 반응형 */
+    @media (max-width: 768px) {
+      .container {
+        position: relative;
+        padding-bottom: env(safe-area-inset-bottom);
+      }
+      .info-panel {
+        position: fixed;
+        right: -100%;
+        top: 0;
+        width: 80%;
+        height: calc(100vh - 70px - env(safe-area-inset-bottom));
+        z-index: 1000;
+        transition: right 0.3s ease;
+        background: #d0d0d0;
+        padding-bottom: 0;
+      }
+      .info-panel.show {
+        right: 0;
+      }
+      .sidebar-toggle {
+        position: fixed;
+        right: 10px;
+        top: 10px;
+        z-index: 1001;
+        background: #007bff;
+        color: white;
+        border: none;
+        border-radius: 50%;
+        width: 50px;
+        height: 50px;
+        font-size: 20px;
+        cursor: pointer;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+      }
+      .chat-area {
+        width: 100%;
+      }
+      .speech-bubble {
+        font-size: 14px;
+        padding: 12px;
+        line-height: 1.6;
+      }
+      .input-area input {
+        font-size: 14px;
+        padding: 8px 12px;
+      }
+      .input-area button {
+        font-size: 16px;
+      }
+      .section {
+        font-size: 12px;
+      }
+      .section strong {
+        font-size: 13px;
+      }
+      .word {
+        font-size: 13px;
+      }
+      .betawordfirst, .betaword {
+        font-size: 11px;
+      }
+      .btn {
+        font-size: 12px;
+        padding: 8px 20px;
+        flex: 1;
+        min-width: 0;
+      }
+      .opinion-buttons {
+        gap: 8px;
+      }
+      .return-value {
+        font-size: 10px;
+      }
+      .return-amount {
+        font-size: 11px;
+      }
+      .card div:first-child {
+        font-size: 11px;
+      }
+      .card div:last-child {
+        font-size: 12px;
+      }
+    }
   </style>
 </head>
 
 <body>
 <div class="container">
+  <button class="sidebar-toggle" id="sidebar-toggle" style="display: none;">📊</button>
   <div class="chat-area" id="chat-area">
     <div class="center-image-overlay">
       <img src="/static/img/center_image.jpg" alt="중앙 이미지">
@@ -293,6 +396,8 @@ document.addEventListener('DOMContentLoaded', function () {
   const btnDefaulted = document.getElementById('btn-defaulted');
   const btnNormal = document.getElementById('btn-normal');
   const warningMessage = document.getElementById('warning-message');
+  const sidebarToggle = document.getElementById('sidebar-toggle');
+  const infoPanel = document.querySelector('.info-panel');
 
   stockChart.src = `/plot.png?ticker=${selectedTicker || 'default'}&_=${new Date().getTime()}`;
   marked.setOptions({ breaks: true, gfm: true });
@@ -387,6 +492,36 @@ document.addEventListener('DOMContentLoaded', function () {
   document.getElementById('image-modal').addEventListener('click', () => {
     document.getElementById('image-modal').style.display = 'none';
   });
+
+  // 모바일 사이드바 토글
+  function checkMobile() {
+    if (window.innerWidth <= 768) {
+      sidebarToggle.style.display = 'block';
+      infoPanel.classList.remove('show');
+    } else {
+      sidebarToggle.style.display = 'none';
+      infoPanel.classList.remove('show');
+    }
+  }
+
+  sidebarToggle.addEventListener('click', () => {
+    infoPanel.classList.toggle('show');
+  });
+
+  // 사이드바 외부 클릭 시 닫기
+  document.addEventListener('click', (e) => {
+    if (window.innerWidth <= 768 && 
+        !infoPanel.contains(e.target) && 
+        !sidebarToggle.contains(e.target)) {
+      infoPanel.classList.remove('show');
+    }
+  });
+
+  // 초기 로드 시 모바일 체크
+  checkMobile();
+  
+  // 창 크기 변경 시 모바일 체크
+  window.addEventListener('resize', checkMobile);
 });
 </script>
 </body>
