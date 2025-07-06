@@ -8,6 +8,13 @@ from datetime import datetime, timedelta
 from pykrx import stock
 import yfinance as yf
 import sqlite3
+import ssl
+import urllib3
+import certifi
+
+# SSL 설정
+ssl._create_default_https_context = ssl._create_unverified_context
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # 시스템 프롬프트
 SYSTEM_PROMPT_TEMPLATE = """
@@ -16,27 +23,28 @@ SYSTEM_PROMPT_TEMPLATE = """
 진짜 중학생한테 알려주는게 아니라 중학생도 이해할수 있을 정도로 설명하는게 목표야
 정보출처는 무조건 다트에서 가져와
 주의사항같은거 말하지마
-마크다운언어로 예쁘게 작성해되 글머리 기호는 쓰지 말하줘
+마크다운 형식으로 예쁘게 작성해주세요
 무조건 코스피 코스닥 기업만 대답하고 아니면 다시 질문해달라고 해줘
-예시뉴스 제목에서 길머리 기호는 쓰지마
 """
 
 # 챗봇 답변 형식
 CHAT_FORMAT_PROMPT = """
 아래 형식에 맞춰 한국어로 답변해주세요.
 
-##부도예측 결과
+**{해당 기업 이름}의 정보를 제공합니다**
+
+**부도예측 결과**
 결과에 따른 자연스러운 설명
 
-##해당 기업 주요매출 제품
-###<주요제품 또는 서비스 1>
+**주요 매출 제품**
+***주요 제품 또는 서비스 1***
 두줄정도설명
 
-###<주요제품 또는 서비스 2>
+***주요 제품 또는 서비스 2***
 두줄정도설명
 
-##부가설명
-그냥 회사에 대한 설립일이랑 개요만 설명해
+**부가설명**
+그냥 회사에 대한 설립일이랑 개요만 설명해주세요.
 """
 
 # 챗봇 요청 모델
@@ -82,29 +90,65 @@ def get_latest_news_naver(query: str, naver_client_id, naver_client_secret, disp
 # 종목코드 추출 함수
 def extract_ticker(user_msg, NAME_TO_TICKER):
     """사용자 메시지에서 ticker와 종목명을 추출하는 함수"""
-    conn = sqlite3.connect("rrdb.db")
-    cursor = conn.cursor()
+    conn = None
+    try:
+        conn = sqlite3.connect("rrdb.db")
+        cursor = conn.cursor()
 
-    keyword = user_msg.replace(" ", "")
+        # 메시지에서 회사명 추출 (공백 제거 후 첫 번째 단어 또는 명사 추출)
+        import re
+        
+        # 일반적인 한국어 회사명 패턴 (2-4글자)
+        company_patterns = [
+            r'([가-힣]{2,4})에',  # 2-4글자 한글 + "에"
+            r'([A-Za-z]{2,10})에',  # 2-10글자 영문 + "에"
+            r'([가-힣]{2,4})',  # 2-4글자 한글
+            r'([A-Za-z]{2,10})',  # 2-10글자 영문
+        ]
+        
+        # "에"가 들어가는 회사명 패턴 (더 긴 패턴 우선)
+        extended_patterns = [
+            r'([가-힣]{3,6})에',  # 3-6글자 한글 + "에" (더 긴 패턴)
+            r'([A-Za-z]{3,12})에',  # 3-12글자 영문 + "에" (더 긴 패턴)
+        ]
+        
+        # 모든 패턴을 길이순으로 정렬 (긴 패턴 우선)
+        all_patterns = extended_patterns + company_patterns
+        
+        keywords = []
+        for pattern in all_patterns:
+            matches = re.findall(pattern, user_msg)
+            keywords.extend(matches)
+        
+        # 중복 제거 및 길이순 정렬
+        keywords = list(set(keywords))
+        keywords.sort(key=len, reverse=True)
+        
+        print(f"[DEBUG] 추출된 키워드: {keywords}")
+        
+        for keyword in keywords:
+            # 정확히 일치하는 경우 우선 검색
+            cursor.execute("SELECT 종목코드, 회사명 FROM corp_info WHERE 회사명 = ?", (keyword,))
+            row = cursor.fetchone()
+            if row:
+                return row[0], row[1]
 
-    # 정확히 일치하는 경우 우선 검색
-    cursor.execute("SELECT 종목코드, 회사명 FROM corp_info WHERE 회사명 = ?", (keyword,))
-    row = cursor.fetchone()
-    if row:
-        conn.close()
-        return row[0], row[1]
+            # 부분일치 검색
+            cursor.execute("SELECT 종목코드, 회사명 FROM corp_info WHERE 회사명 LIKE ?", (f"%{keyword}%",))
+            rows = cursor.fetchall()
+            
+            if rows:
+                # 가장 긴 회사명을 우선 선택
+                rows.sort(key=lambda x: len(x[1]), reverse=True)
+                return rows[0][0], rows[0][1]
 
-    # 일치하지 않으면 부분일치 검색 (단, 가장 긴 회사명을 우선으로)
-    cursor.execute("SELECT 종목코드, 회사명 FROM corp_info WHERE 회사명 LIKE ?", (f"%{keyword}%",))
-    rows = cursor.fetchall()
-    conn.close()
-
-    if rows:
-        # 가장 긴 회사명을 우선 선택
-        rows.sort(key=lambda x: len(x[1]), reverse=True)
-        return rows[0][0], rows[0][1]
-
-    return None, None
+        return None, None
+    except Exception as e:
+        print(f"extract_ticker 오류: {e}")
+        return None, None
+    finally:
+        if conn:
+            conn.close()
 
 
 # 종목 기본 정보 가져오기
@@ -165,11 +209,12 @@ def fetch_stock_data(ticker: str) -> dict:
         print("⚠️ fetch_stock_data 오류:", e)
     return data
 
-# 베타값 계산 (yfinance 실패시 None 반환)
 def get_beta_values(stock_code: str):
-    if stock_code is None:
-        return None, None
+    """
+    1년치, 3년치 베타 값 반환
+    """
     try:
+        print(stock_code)
         stock_code += ".KS"
         beta_1y = get_beta_yf(stock_code, weeks=52)
         beta_3y = get_beta_yf(stock_code, weeks=156)
@@ -178,26 +223,87 @@ def get_beta_values(stock_code: str):
         print(f"⚠️ 베타 계산 오류: {e}")
         return None, None
 
-# yfinance 베타 계산 함수
 def get_beta_yf(ticker: str, weeks: int):
     end = datetime.today()
     start = end - timedelta(weeks=weeks)
+
+    stock_data = yf.download(ticker, start=start, end=end)
+    market_data = yf.download("^KS11", start=start, end=end)  # KOSPI 지수
+
+    if stock_data.empty or market_data.empty:
+        return None
+
+    stock_returns = stock_data['Close'].pct_change().dropna()
+    market_returns = market_data['Close'].pct_change().dropna()
+
+    aligned = pd.concat([stock_returns, market_returns], axis=1).dropna()
+    aligned.columns = ['Stock', 'Market']
+
+    covariance = np.cov(aligned['Stock'], aligned['Market'])[0, 1]
+    market_variance = np.var(aligned['Market'])
+    beta = covariance / market_variance
+
+    return round(beta, 4)
+
+# pykrx 베타 계산 함수
+def get_beta_pykrx(ticker: str, weeks: int):
     try:
-        stock_data = yf.download(ticker, start=start, end=end)
-        market_data = yf.download("^KS11", start=start, end=end)
-        if stock_data.empty or market_data.empty:
-            print("yfinance 오류, pykrx 대체 시도")
+        end = datetime.today()
+        start = end - timedelta(weeks=weeks)
+        start_str = start.strftime("%Y%m%d")
+        end_str = end.strftime("%Y%m%d")
+        
+        # 개별 주식 데이터
+        stock_data = stock.get_market_ohlcv_by_date(fromdate=start_str, todate=end_str, ticker=ticker)
+        if stock_data.empty:
+            print(f"pykrx 주식 데이터 없음: {ticker}")
             return None
-        stock_returns = stock_data['Close'].pct_change().dropna()
-        market_returns = market_data['Close'].pct_change().dropna()
+            
+        # 코스피/코스닥 구분하여 지수 데이터 가져오기
+        try:
+            # 코스피 지수 데이터 가져오기 (다른 방법 시도)
+            market_data = stock.get_market_ohlcv_by_date(fromdate=start_str, todate=end_str, ticker="KS11")
+            print(f"코스피 지수 사용: {ticker}")
+        except Exception as e:
+            print(f"KS11 시도 실패: {e}")
+            try:
+                # 코스닥 지수 데이터 가져오기
+                market_data = stock.get_market_ohlcv_by_date(fromdate=start_str, todate=end_str, ticker="KSDAQ")
+                print(f"코스닥 지수 사용: {ticker}")
+            except Exception as e:
+                print(f"KSDAQ 시도 실패: {e}")
+                try:
+                    # 다른 지수 티커 시도
+                    market_data = stock.get_market_ohlcv_by_date(fromdate=start_str, todate=end_str, ticker="1001")
+                    print(f"코스피 지수(1001) 사용: {ticker}")
+                except Exception as e:
+                    print(f"1001 시도 실패: {e}")
+                    print("pykrx 지수 데이터 가져오기 실패")
+                    return None
+                
+        if market_data.empty:
+            print("pykrx 지수 데이터 없음")
+            return None
+            
+        # 수익률 계산
+        stock_returns = stock_data['종가'].pct_change().dropna()
+        market_returns = market_data['종가'].pct_change().dropna()
+        
+        # 데이터 정렬
         aligned = pd.concat([stock_returns, market_returns], axis=1).dropna()
         aligned.columns = ['Stock', 'Market']
+        
+        if len(aligned) < 10:  # 최소 데이터 포인트 확인
+            print("pykrx 데이터 포인트 부족")
+            return None
+            
+        # 베타 계산
         covariance = np.cov(aligned['Stock'], aligned['Market'])[0, 1]
         market_variance = np.var(aligned['Market'])
         beta = covariance / market_variance
         return round(beta, 4)
     except Exception as e:
-        print(f"yfinance 오류: {e}")
+        print(f"pykrx 베타 계산 오류: {e}")
         return None
 
 # 부도 예측 데이터 가져오기
@@ -249,6 +355,8 @@ def chat_logic(req: ChatRequest, naver_client_id, naver_client_secret, NAME_TO_T
     print(f"[DEBUG] 추출된 ticker: {ticker}, 종목명: {stock_name}")
     print(f"[DEBUG] 부실 예측 결과: {is_defaulted}")
     print(f"[DEBUG] 주요 제품: {main_products}")
+    print(f"[DEBUG] 수익률 - 1년: {data.get('return_1y')}%, 3년: {data.get('return_3y')}%")
+    print(f"[DEBUG] 베타 - 1년: {beta_1y}, 3년: {beta_3y}")
     print(f"[DEBUG] PER: {data.get('per')}, ROE: {data.get('roe')}, 부채비율: {data.get('debt_ratio')}")
 
     if stock_name:
@@ -268,17 +376,25 @@ def chat_logic(req: ChatRequest, naver_client_id, naver_client_secret, NAME_TO_T
 
         prompt = "\n".join(context_parts) + f"\n사용자 질문: {user_msg}"
         response = model.generate_content(prompt)
-        answer = response.text.strip()
+        
+        # 응답 검증
+        if response and hasattr(response, 'text'):
+            answer = response.text.strip()
+        else:
+            answer = "부도예측 결과\n응답을 생성하지 못했습니다.\n"
 
         if news_items:
-            news_markdown = "\n\n## 관련 뉴스\n" + "\n".join(f"[{item['title']}]({item['link']})" for item in news_items)
+            news_markdown = "\n\n**관련 뉴스**\n" + "\n".join(f"[{item['title']}]({item['link']})" for item in news_items)
             answer += news_markdown
 
     except Exception as e:
         print(f"[ERROR] Gemini API 오류: {e}")
-        answer = "부도예측 결과\n오류로 정보를 불러오지 못했습니다.\n"
+        if "quota" in str(e).lower() or "limit" in str(e).lower() or "exceeded" in str(e).lower():
+            answer = "**API 사용량 초과**\n\n현재 Gemini API 사용량이 초과되었습니다. 잠시 후 다시 시도해주세요.\n\n**부도예측 결과**\n정보를 불러오지 못했습니다.\n\n**주요 매출 제품**\n정보를 불러오지 못했습니다.\n\n**부가설명**\nAPI 사용량 초과로 인해 상세 정보를 제공할 수 없습니다."
+        else:
+            answer = "**오류 발생**\n\n정보를 불러오는 중 오류가 발생했습니다.\n\n**부도예측 결과**\n정보를 불러오지 못했습니다.\n\n**주요 매출 제품**\n정보를 불러오지 못했습니다.\n\n**부가설명**\n오류로 인해 상세 정보를 제공할 수 없습니다."
 
-    print(f"[DEBUG] 최종 응답: {answer}")
+    print(f"[DEBUG] 최종 응답: {answer[:200]}...")  # 응답이 너무 길 수 있으므로 앞부분만 출력
 
     # numpy 타입을 JSON 직렬화 가능한 형태로 변환
     def convert_numpy_types(obj):

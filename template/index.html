@@ -26,6 +26,7 @@
       display: flex;
       flex-direction: column;
       min-width: 0;
+      height: calc(100vh - 60px);
     }
     .chat-messages {
       flex: 1;
@@ -34,6 +35,7 @@
       padding-bottom: calc(15px + env(safe-area-inset-bottom));
       scroll-behavior: smooth;
       flex-direction: column-reverse;
+      height: calc(100% - 60px);
     }
     .speech-bubble {
       position: relative;
@@ -75,10 +77,11 @@
       border-top: 1px solid #ccc;
       flex-shrink: 0;
       position: fixed;
-      bottom: calc(env(safe-area-inset-bottom) + 2px);
+      bottom: 0;
       left: 0;
       right: 0;
       z-index: 100;
+      height: 60px;
     }
     .input-area input {
       flex: 1;
@@ -100,6 +103,9 @@
       padding: 20px;
       overflow-y: auto;
       flex-shrink: 0;
+      height: calc(100vh - 60px);
+      display: flex;
+      flex-direction: column;
     }
     .info-panel h2 {
       margin-bottom: 15px;
@@ -213,11 +219,29 @@
       font-size: 1.2rem;
       text-align: center;
     }
-    .markdown-content {
-      line-height: 1.8;
+          .markdown-content {
+        line-height: 1.8;
+      }
+      .markdown-content p {
+        margin-bottom: 12px;
+      }
+      .markdown-content strong {
+        font-size: 1.1em;
+        font-weight: bold;
+      }
+      .markdown-content strong em {
+        font-size: 0.85em;
+        font-weight: bold;
+        font-style: italic;
+      }
+    .markdown-content strong {
+      font-size: 1.2em;
+      font-weight: bold;
     }
-    .markdown-content p {
-      margin-bottom: 12px;
+    .markdown-content strong em {
+      font-size: 0.9em;
+      font-weight: bold;
+      font-style: italic;
     }
     
     /* 태블릿 반응형 */
@@ -238,11 +262,12 @@
         right: -100%;
         top: 0;
         width: 80%;
-        height: calc(100vh - 90px - env(safe-area-inset-bottom));
+        height: calc(100vh - 60px - env(safe-area-inset-bottom));
         z-index: 1000;
         transition: right 0.3s ease;
         background: #d0d0d0;
-        padding-bottom: 10px;
+        padding-bottom: 15px;
+        overflow-y: auto;
       }
       .info-panel.show {
         right: 0;
@@ -268,9 +293,9 @@
         height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
       }
       .chat-messages {
-        height: calc(100vh - 90px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+        height: calc(100vh - 160px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
         overflow-y: auto;
-        padding-bottom: 30px;
+        padding-bottom: 80px;
       }
       .speech-bubble {
         font-size: 14px;
@@ -419,7 +444,11 @@ document.addEventListener('DOMContentLoaded', function () {
     div.className = 'speech-bubble ' + (isUser ? 'user-bubble' : 'bot-bubble');
     div.innerHTML = isUser ? text.replace(/\n/g, '<br>') : `<div class="markdown-content">${marked.parse(text)}</div>`;
     chatMessages.appendChild(div);
-    chatMessages.scrollTop = chatMessages.scrollHeight;
+    
+    // 스크롤을 맨 아래로 이동
+    setTimeout(() => {
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    }, 200);
   }
 
   function setReturnAmount(element, returnRate) {

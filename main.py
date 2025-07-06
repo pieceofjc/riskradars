@@ -22,6 +22,10 @@ naver_client_id = os.getenv("NAVER_CLIENT_ID")
 naver_client_secret = os.getenv("NAVER_CLIENT_SECRET")
 google_api_key = os.getenv("GOOGLE_API_KEY")
 
+# 환경 변수 검증
+if not google_api_key:
+    raise ValueError("GOOGLE_API_KEY 환경 변수가 설정되지 않았습니다.")
+
 # Configure Google Generative AI API key
 genai.configure(api_key=google_api_key)
 model = genai.GenerativeModel("gemini-1.5-flash")
@@ -62,7 +66,7 @@ async def chat(req: ChatRequest):
 @app.get("/plot.png")
 async def get_plot(stock_code: str = Query(..., alias="ticker")):
     try:
-        if stock_code is None:
+        if stock_code is None or stock_code == "default":
             return {"error": "해당 회사의 종목코드를 찾을 수 없습니다."}
 
         predictor = AdvancedStockPredictor(stock_code)
@@ -104,7 +108,19 @@ async def get_plot(stock_code: str = Query(..., alias="ticker")):
 
     except Exception as e:
         print("🔥 Plot 오류:", e)
-        return {"error": "차트 생성에 실패했습니다."}
+        # 기본 차트 반환
+        try:
+            buf = io.BytesIO()
+            fig, ax = plt.subplots(figsize=(8, 6))
+            ax.text(0.5, 0.5, '차트를 불러올 수 없습니다', ha='center', va='center', transform=ax.transAxes, fontsize=16)
+            ax.set_xlim(0, 1)
+            ax.set_ylim(0, 1)
+            plt.savefig(buf, format='png')
+            plt.close(fig)
+            buf.seek(0)
+            return StreamingResponse(buf, media_type="image/png")
+        except:
+            return {"error": "차트 생성에 실패했습니다."}
 
 # --------------------
 # 앱 실행
