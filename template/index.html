@@ -438,6 +438,13 @@ document.addEventListener('DOMContentLoaded', function () {
 
   stockChart.src = `/plot.png?ticker=${selectedTicker || 'default'}&_=${new Date().getTime()}`;
   marked.setOptions({ breaks: true, gfm: true });
+  
+  // 링크에 target="_blank" 속성 추가
+  const renderer = new marked.Renderer();
+  renderer.link = function(href, title, text) {
+    return `<a href="${href}" target="_blank" rel="noopener noreferrer">${text}</a>`;
+  };
+  marked.use({ renderer });
 
   function addBubble(text, isUser) {
     const div = document.createElement('div');
