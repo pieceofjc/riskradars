@@ -35,10 +35,10 @@ SYSTEM_PROMPT_TEMPLATE = """
 
 # 챗봇 답변 형식
 CHAT_FORMAT_PROMPT = """
-
 답변 형식은 아래 입니다
 **{해당 기업 이름}의 정보를 제공합니다**
-**부도 예측 결과**
+
+**부실 예측 결과**
 예측 결과에 따른 자연스러운 설명 (제공된 데이터 기반)
 
 **주요 매출 제품**
@@ -107,6 +107,13 @@ def extract_ticker(user_msg, NAME_TO_TICKER):
         conn = sqlite3.connect("rrdb.db")
         cursor = conn.cursor()
 
+        # 0. 입력 문장에 DB 회사명이 포함되어 있으면 바로 반환
+        cursor.execute("SELECT stock_code, 회사명 FROM corp_info")
+        all_companies = cursor.fetchall()
+        for code, name in all_companies:
+            if name in user_msg:
+                return code, name
+
         # 메시지에서 회사명 추출 (공백 제거 후 첫 번째 단어 또는 명사 추출)
         import re
         
@@ -138,21 +145,24 @@ def extract_ticker(user_msg, NAME_TO_TICKER):
         
         print(f"[DEBUG] 추출된 키워드: {keywords}")
         
+        # 1. 정확히 일치하는 회사명 우선 반환
         for keyword in keywords:
-            # 정확히 일치하는 경우 우선 검색
             cursor.execute("SELECT stock_code, 회사명 FROM corp_info WHERE 회사명 = ?", (keyword,))
             row = cursor.fetchone()
             if row:
                 return row[0], row[1]
 
-            # 부분일치 검색
+        # 2. 부분일치 후보 모두 모으기
+        candidates = []
+        for keyword in keywords:
             cursor.execute("SELECT stock_code, 회사명 FROM corp_info WHERE 회사명 LIKE ?", (f"%{keyword}%",))
             rows = cursor.fetchall()
-            
-            if rows:
-                # 가장 긴 회사명을 우선 선택
-                rows.sort(key=lambda x: len(x[1]), reverse=True)
-                return rows[0][0], rows[0][1]
+            candidates.extend(rows)
+
+        # 3. 부분일치 후보 중 가장 긴 회사명 반환
+        if candidates:
+            candidates.sort(key=lambda x: len(x[1]), reverse=True)
+            return candidates[0][0], candidates[0][1]
 
         return None, None
     except Exception as e:
@@ -304,7 +314,7 @@ def get_beta_pykrx(ticker: str, weeks: int):
         print(f"pykrx 베타 계산 오류: {e}")
         return None
 
-# 부도 예측 데이터 가져오기
+# 부실 예측 데이터 가져오기
 def get_default_data(ticker: str, NAME_TO_TICKER = {}):
     if ticker is None:
         return -1
@@ -365,7 +375,7 @@ def chat_logic(req: ChatRequest, naver_client_id, naver_client_secret, NAME_TO_T
         context_parts = [
             SYSTEM_PROMPT_TEMPLATE,
             CHAT_FORMAT_PROMPT,
-            f"부실 예측 결과: {'부실 기업' if is_defaulted == 1 else '정상 기업' if is_defaulted == 0 else '예측 결과가 없스니다 12월 결산이 아닐 수 있습니다'}"
+            f"부실 예측 결과: {'부실 기업' if is_defaulted == 1 else '정상 기업' if is_defaulted == 0 else '예측 결과가 없습니다 12월 결산이 아닐 수 있습니다'}"
         ]
 
         if main_products:
@@ -394,7 +404,7 @@ def chat_logic(req: ChatRequest, naver_client_id, naver_client_secret, NAME_TO_T
             "알 수 없",
             "바로 가져올 수 없습니다"
         ]):
-            answer = f"""**{stock_name or '기업명 미확인'}의 정보를 제공합니다**\n\n**부도 예측 결과**\n해당 기업은 {'부실 기업' if is_defaulted == 1 else '정상 기업' if is_defaulted == 0 else '예측 결과가 없습니다. 12월 결산이 아닐 수 있습니다.'}입니다. 투자에 주의가 필요합니다.\n\n**주요 매출 제품**\n{main_products or '정보를 불러올 없습니다.'}\n\n**부가 설명**\n{stock_info['description'] if stock_info and 'description' in stock_info else '설립일 및 개요 정보를 불러올 수 없습니다.'}\n"""
+            answer = f"""**{stock_name or '기업명 미확인'}의 정보를 제공합니다**\n\n**부실 예측 결과**\n해당 기업은 {'부실 기업' if is_defaulted == 1 else '정상 기업' if is_defaulted == 0 else '예측 결과가 없습니다. 12월 결산이 아닐 수 있습니다.'}입니다. 투자에 주의가 필요합니다.\n\n**주요 매출 제품**\n{main_products or '정보를 불러올 없습니다.'}\n\n**부가 설명**\n{stock_info['description'] if stock_info and 'description' in stock_info else '설립일 및 개요 정보를 불러올 수 없습니다.'}\n"""
 
         if news_items:
             news_markdown = "\n\n**관련 뉴스**\n" + "\n".join(f"[{item['title']}]({item['link']})" for item in news_items)
@@ -403,9 +413,9 @@ def chat_logic(req: ChatRequest, naver_client_id, naver_client_secret, NAME_TO_T
     except Exception as e:
         print(f"[ERROR] Gemini API 오류: {e}")
         if "quota" in str(e).lower() or "limit" in str(e).lower() or "exceeded" in str(e).lower():
-            answer = "**API 사용량 초과**\n\n현재 Gemini API 사용량이 초과되었습니다. 잠시 후 다시 시도해주세요.\n\n**부도예측 결과**\n정보를 불러오지 못했습니다.\n\n**주요 매출 제품**\n정보를 불러오지 못했습니다.\n\n**부가설명**\nAPI 사용량 초과로 인해 상세 정보를 제공할 수 없습니다."
+            answer = "**API 사용량 초과**\n\n현재 Gemini API 사용량이 초과되었습니다. 잠시 후 다시 시도해주세요.\n\n**부실예측 결과**\n정보를 불러오지 못했습니다.\n\n**주요 매출 제품**\n정보를 불러오지 못했습니다.\n\n**부가설명**\nAPI 사용량 초과로 인해 상세 정보를 제공할 수 없습니다."
         else:
-            answer = "**오류 발생**\n\n정보를 불러오는 중 오류가 발생했습니다.\n\n**부도예측 결과**\n정보를 불러오지 못했습니다.\n\n**주요 매출 제품**\n정보를 불러오지 못했습니다.\n\n**부가설명**\n오류로 인해 상세 정보를 제공할 수 없습니다."
+            answer = "**오류 발생**\n\n정보를 불러오는 중 오류가 발생했습니다.\n\n**부실예측 결과**\n정보를 불러오지 못했습니다.\n\n**주요 매출 제품**\n정보를 불러오지 못했습니다.\n\n**부가설명**\n오류로 인해 상세 정보를 제공할 수 없습니다."
 
     print(f"[DEBUG] 최종 응답: {answer[:200]}...")  # 응답이 너무 길 수 있으므로 앞부분만 출력
 
