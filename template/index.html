@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <link rel="shortcut icon" href="/static/favicon.ico" type="image/x-icon">
-  <title>RiskRadar : 증권 정보 제공 서비스 for ThinFiler</title>
+  <title>기업 분석 대시보드</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body, html {
@@ -438,13 +438,6 @@ document.addEventListener('DOMContentLoaded', function () {
 
   stockChart.src = `/plot.png?ticker=${selectedTicker || 'default'}&_=${new Date().getTime()}`;
   marked.setOptions({ breaks: true, gfm: true });
-  
-  // 링크에 target="_blank" 속성 추가
-  const renderer = new marked.Renderer();
-  renderer.link = function(href, title, text) {
-    return `<a href="${href}" target="_blank" rel="noopener noreferrer">${text}</a>`;
-  };
-  marked.use({ renderer });
 
   function addBubble(text, isUser) {
     const div = document.createElement('div');

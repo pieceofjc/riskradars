@@ -204,9 +204,7 @@ def fetch_stock_data(ticker: str) -> dict:
             data["roe"] = round(roe, 2) if pd.notna(roe) else None
         corp_info = stock.get_market_cap_by_date(fromdate=today_str, todate=today_str, ticker=ticker)
         if not corp_info.empty:
-            market_cap_value = corp_info["시가총액"].iloc[0]
-            if pd.notna(market_cap_value):
-                data["market_cap"] = int(market_cap_value)
+            data["market_cap"] = int(corp_info["시가총액"].iloc[0])
     except Exception as e:
         print("⚠️ fetch_stock_data 오류:", e)
     return data
@@ -226,70 +224,26 @@ def get_beta_values(stock_code: str):
         return None, None
 
 def get_beta_yf(ticker: str, weeks: int):
-    try:
-        end = datetime.today()
-        start = end - timedelta(weeks=weeks)
+    end = datetime.today()
+    start = end - timedelta(weeks=weeks)
 
-        stock_data = yf.download(ticker, start=start, end=end)
-        
-        # 종목이 코스피인지 코스닥인지 확인
-        market_index = "^KS11"  # 기본값은 KOSPI
-        try:
-            # 종목 정보에서 시장 구분 확인
-            stock_info = yf.Ticker(ticker)
-            info = stock_info.info
-            if info and 'market' in info:
-                market = info['market'].upper()
-                if 'KOSDAQ' in market or 'KOSPI' in market:
-                    if 'KOSDAQ' in market:
-                        market_index = "^KSDAQ"  # KOSDAQ 지수
-                        print(f"yfinance KOSDAQ 지수 사용: {ticker}")
-                    else:
-                        market_index = "^KS11"   # KOSPI 지수
-                        print(f"yfinance KOSPI 지수 사용: {ticker}")
-        except Exception as e:
-            print(f"yfinance 종목 정보 확인 실패: {e}, 기본 KOSPI 지수 사용")
-        
-        market_data = yf.download(market_index, start=start, end=end)
+    stock_data = yf.download(ticker, start=start, end=end)
+    market_data = yf.download("^KS11", start=start, end=end)  # KOSPI 지수
 
-        # None 체크 추가
-        if stock_data is None or market_data is None:
-            print(f"yfinance 데이터 다운로드 실패: {ticker}")
-            return None
-            
-        if stock_data.empty or market_data.empty:
-            print(f"yfinance 빈 데이터: {ticker}")
-            return None
-
-        # pandas Series로 변환하여 안전하게 처리
-        stock_returns = pd.Series(stock_data['Close']).pct_change().dropna()
-        market_returns = pd.Series(market_data['Close']).pct_change().dropna()
-
-        # 최소 데이터 포인트 확인
-        if len(stock_returns) < 10 or len(market_returns) < 10:
-            print(f"yfinance 데이터 포인트 부족: {ticker}")
-            return None
-
-        aligned = pd.concat([stock_returns, market_returns], axis=1).dropna()
-        aligned.columns = ['Stock', 'Market']
-        
-        if len(aligned) < 10:
-            print(f"yfinance 정렬된 데이터 포인트 부족: {ticker}")
-            return None
-
-        covariance = np.cov(aligned['Stock'], aligned['Market'])[0, 1]
-        market_variance = np.var(aligned['Market'])
-        
-        if market_variance == 0:
-            print(f"yfinance 시장 분산이 0: {ticker}")
-            return None
-            
-        beta = covariance / market_variance
-
-        return round(beta, 4)
-    except Exception as e:
-        print(f"yfinance 베타 계산 오류: {e}")
+    if stock_data.empty or market_data.empty:
         return None
+
+    stock_returns = stock_data['Close'].pct_change().dropna()
+    market_returns = market_data['Close'].pct_change().dropna()
+
+    aligned = pd.concat([stock_returns, market_returns], axis=1).dropna()
+    aligned.columns = ['Stock', 'Market']
+
+    covariance = np.cov(aligned['Stock'], aligned['Market'])[0, 1]
+    market_variance = np.var(aligned['Market'])
+    beta = covariance / market_variance
+
+    return round(beta, 4)
 
 # pykrx 베타 계산 함수
 def get_beta_pykrx(ticker: str, weeks: int):
@@ -305,63 +259,47 @@ def get_beta_pykrx(ticker: str, weeks: int):
             print(f"pykrx 주식 데이터 없음: {ticker}")
             return None
             
-        # 종목이 코스피인지 코스닥인지 확인
-        market_data = None
-        
-        # 종목코드로 시장 구분 (pykrx 방식)
+        # 코스피/코스닥 구분하여 지수 데이터 가져오기
         try:
-            # 코스피 종목: 000000~099999, 코스닥 종목: 100000~999999
-            ticker_num = int(ticker)
-            if ticker_num < 100000:  # 코스피
-                market_tickers = ["KS11", "1001", "KS200"]  # KOSPI 관련 지수
-                print(f"pykrx KOSPI 종목으로 판단: {ticker}")
-            else:  # 코스닥
-                market_tickers = ["KSDAQ", "KS11"]  # KOSDAQ 우선, 실패시 KOSPI
-                print(f"pykrx KOSDAQ 종목으로 판단: {ticker}")
-        except ValueError:
-            # 숫자가 아닌 경우 기본값 사용
-            market_tickers = ["KS11", "KSDAQ", "1001", "KS200"]
-            print(f"pykrx 종목코드 파싱 실패, 기본 지수 사용: {ticker}")
-        
-        for market_ticker in market_tickers:
+            # 코스피 지수 데이터 가져오기 (다른 방법 시도)
+            market_data = stock.get_market_ohlcv_by_date(fromdate=start_str, todate=end_str, ticker="KS11")
+            print(f"코스피 지수 사용: {ticker}")
+        except Exception as e:
+            print(f"KS11 시도 실패: {e}")
             try:
-                market_data = stock.get_market_ohlcv_by_date(fromdate=start_str, todate=end_str, ticker=market_ticker)
-                if not market_data.empty:
-                    print(f"pykrx 지수 사용: {market_ticker} for {ticker}")
-                    break
+                # 코스닥 지수 데이터 가져오기
+                market_data = stock.get_market_ohlcv_by_date(fromdate=start_str, todate=end_str, ticker="KSDAQ")
+                print(f"코스닥 지수 사용: {ticker}")
             except Exception as e:
-                print(f"pykrx {market_ticker} 시도 실패: {e}")
-                continue
+                print(f"KSDAQ 시도 실패: {e}")
+                try:
+                    # 다른 지수 티커 시도
+                    market_data = stock.get_market_ohlcv_by_date(fromdate=start_str, todate=end_str, ticker="1001")
+                    print(f"코스피 지수(1001) 사용: {ticker}")
+                except Exception as e:
+                    print(f"1001 시도 실패: {e}")
+                    print("pykrx 지수 데이터 가져오기 실패")
+                    return None
                 
-        if market_data is None or market_data.empty:
-            print("pykrx 지수 데이터 가져오기 실패")
+        if market_data.empty:
+            print("pykrx 지수 데이터 없음")
             return None
             
-        # 수익률 계산 - pandas Series로 안전하게 처리
-        stock_returns = pd.Series(stock_data['종가']).pct_change().dropna()
-        market_returns = pd.Series(market_data['종가']).pct_change().dropna()
-        
-        # 최소 데이터 포인트 확인
-        if len(stock_returns) < 10 or len(market_returns) < 10:
-            print("pykrx 데이터 포인트 부족")
-            return None
+        # 수익률 계산
+        stock_returns = stock_data['종가'].pct_change().dropna()
+        market_returns = market_data['종가'].pct_change().dropna()
         
         # 데이터 정렬
         aligned = pd.concat([stock_returns, market_returns], axis=1).dropna()
         aligned.columns = ['Stock', 'Market']
         
         if len(aligned) < 10:  # 최소 데이터 포인트 확인
-            print("pykrx 정렬된 데이터 포인트 부족")
+            print("pykrx 데이터 포인트 부족")
             return None
             
         # 베타 계산
         covariance = np.cov(aligned['Stock'], aligned['Market'])[0, 1]
         market_variance = np.var(aligned['Market'])
-        
-        if market_variance == 0:
-            print("pykrx 시장 분산이 0")
-            return None
-            
         beta = covariance / market_variance
         return round(beta, 4)
     except Exception as e:
@@ -411,7 +349,7 @@ def chat_logic(req: ChatRequest, naver_client_id, naver_client_secret, NAME_TO_T
     data = fetch_stock_data(ticker) if ticker else {}
     beta_1y, beta_3y = get_beta_values(ticker) if ticker else (None, None)
     main_products = data.get("main_products")
-    is_defaulted = get_default_data(ticker, NAME_TO_TICKER) if ticker else -1
+    is_defaulted = get_default_data(ticker, NAME_TO_TICKER)
 
     print(f"[DEBUG] 사용자 메시지: {user_msg}")
     print(f"[DEBUG] 추출된 ticker: {ticker}, 종목명: {stock_name}")
@@ -446,7 +384,7 @@ def chat_logic(req: ChatRequest, naver_client_id, naver_client_secret, NAME_TO_T
             answer = "부도예측 결과\n응답을 생성하지 못했습니다.\n"
 
         if news_items:
-            news_markdown = "\n\n**관련 뉴스**\n" + "\n".join(f"[{item['title']}]({item['link']}){{:target=\"_blank\"}}" for item in news_items)
+            news_markdown = "\n\n**관련 뉴스**\n" + "\n".join(f"[{item['title']}]({item['link']})" for item in news_items)
             answer += news_markdown
 
     except Exception as e:
