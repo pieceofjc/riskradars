@@ -128,13 +128,13 @@ def extract_ticker(user_msg, NAME_TO_TICKER):
         
         for keyword in keywords:
             # 정확히 일치하는 경우 우선 검색
-            cursor.execute("SELECT 종목코드, 회사명 FROM corp_info WHERE 회사명 = ?", (keyword,))
+            cursor.execute("SELECT stock_code, 회사명 FROM corp_info WHERE 회사명 = ?", (keyword,))
             row = cursor.fetchone()
             if row:
                 return row[0], row[1]
 
             # 부분일치 검색
-            cursor.execute("SELECT 종목코드, 회사명 FROM corp_info WHERE 회사명 LIKE ?", (f"%{keyword}%",))
+            cursor.execute("SELECT stock_code, 회사명 FROM corp_info WHERE 회사명 LIKE ?", (f"%{keyword}%",))
             rows = cursor.fetchall()
             
             if rows:
@@ -325,7 +325,7 @@ def get_default_data(ticker: str, NAME_TO_TICKER = {}):
         conn = sqlite3.connect("rrdb.db")
         try:
             df_check = pd.read_sql(
-                "SELECT is_defaulted FROM corp_info WHERE 종목코드 = ? LIMIT 1",
+                "SELECT is_defaulted FROM corp_info WHERE stock_code = ? LIMIT 1",
                 conn,
                 params=(ticker,)
             )
