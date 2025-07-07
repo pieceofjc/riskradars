@@ -18,33 +18,45 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # 시스템 프롬프트
 SYSTEM_PROMPT_TEMPLATE = """
-너는 주식과 회사 정보를 중학생도 이해할 수 있게 쉽게 설명해 주는 봇이야.
-추가설명 - 중학생 눈높이 이런건 안적어도 돼, 그냥 부가 설명이라고 해, 
-진짜 중학생한테 알려주는게 아니라 중학생도 이해할수 있을 정도로 설명하는게 목표야
-정보출처는 무조건 다트에서 가져와
-주의사항같은거 말하지마
-마크다운 형식으로 예쁘게 작성해주세요
-무조건 코스피 코스닥 기업만 대답하고 아니면 다시 질문해달라고 해줘
+역할 정의
+당신은 주식과 회사 정보를 쉽고 명확하게 설명해주는 전문 봇입니다. 복잡한 금융 용어나 개념을 일반인도 이해할 수 있도록 쉬운 표현으로 설명하는 것이 목표입니다.
+핵심 원칙
+
+정보 출처: 부실 예측 결과 정보는 내가 준 데이터를 무조건 사용하고, 다른 정보는 다트(DART)에서 가져온 데이터를 기반으로 제공
+대상 기업: 코스피, 코스닥 상장 기업만 대응 (해당되지 않는 경우 재질문 요청)
+데이터 우선: 제공된 데이터가 있으면 반드시 답변에 포함하고 활용
+완전한 답변: 상냥하고 적극적으로 모든 요청에 대해 검색하여 정보 제공
+
+예외 처리
+
+코스피/코스닥 비상장 기업의 경우: "죄송하지만 코스피, 코스닥 상장 기업에 대해서만 정보를 제공할 수 있습니다. 다른 기업으로 다시 질문해주세요."
+데이터 제공 우선순위: 제공된 실제 데이터 > 일반적인 정보
 """
 
 # 챗봇 답변 형식
 CHAT_FORMAT_PROMPT = """
-아래 형식에 맞춰 한국어로 답변해주세요.
 
+답변 형식은 아래 입니다
 **{해당 기업 이름}의 정보를 제공합니다**
-
-**부도예측 결과**
-결과에 따른 자연스러운 설명
+**부도 예측 결과**
+예측 결과에 따른 자연스러운 설명 (제공된 데이터 기반)
 
 **주요 매출 제품**
-***주요 제품 또는 서비스 1***
-두줄정도설명
-
-***주요 제품 또는 서비스 2***
-두줄정도설명
+**주요 제품 또는 서비스 1**
+제품/서비스에 대한 2줄 정도의 쉬운 설명, 못 찾으면 못 찾았다고 해줘
+**주요 제품 또는 서비스 2**
+제품/서비스에 대한 2줄 정도의 쉬운 설명, 못 찾으면 못 찾았다고 해줘
 
 **부가설명**
-그냥 회사에 대한 설립일이랑 개요만 설명해주세요.
+회사 설립일과 기업 개요를 간단히 설명, 못 찾으면 못 찾았다고 해줘
+
+
+작성 가이드라인은 이것입니다
+마크다운 형식으로 깔끔하게 작성
+볼드체(**) 제목 형식은 반드시 유지
+전문 용어는 쉬운 표현으로 풀어서 설명
+제공된 데이터가 없을 때만 "정보 없음" 표시
+모든 유명 기업도 제공된 데이터 기반으로 답변
 """
 
 # 챗봇 요청 모델
@@ -168,11 +180,6 @@ def build_stock_info(ticker: str):
 # 주식 데이터 가져오기 (yfinance 실패시 pykrx 대체)
 def fetch_stock_data(ticker: str) -> dict:
     data = {
-        "per": None,
-        "roe": None,
-        "debt_ratio": None,
-        "sales": None,
-        "market_cap": None,
         "main_products": None,
         "return_1y": None,
         "return_3y": None
@@ -196,15 +203,6 @@ def fetch_stock_data(ticker: str) -> dict:
         if not future_prices_3y.empty:
             base_3y_price = future_prices_3y.iloc[0]
             data["return_3y"] = round((current / base_3y_price - 1) * 100, 2)
-        finance = stock.get_market_fundamental_by_date(fromdate=today_str, todate=today_str, ticker=ticker)
-        if not finance.empty:
-            per = finance["PER"].iloc[0]
-            roe = finance["ROE"].iloc[0]
-            data["per"] = round(per, 2) if pd.notna(per) else None
-            data["roe"] = round(roe, 2) if pd.notna(roe) else None
-        corp_info = stock.get_market_cap_by_date(fromdate=today_str, todate=today_str, ticker=ticker)
-        if not corp_info.empty:
-            data["market_cap"] = int(corp_info["시가총액"].iloc[0])
     except Exception as e:
         print("⚠️ fetch_stock_data 오류:", e)
     return data
@@ -349,7 +347,7 @@ def chat_logic(req: ChatRequest, naver_client_id, naver_client_secret, NAME_TO_T
     data = fetch_stock_data(ticker) if ticker else {}
     beta_1y, beta_3y = get_beta_values(ticker) if ticker else (None, None)
     main_products = data.get("main_products")
-    is_defaulted = get_default_data(ticker, NAME_TO_TICKER)
+    is_defaulted = get_default_data(ticker, NAME_TO_TICKER) if ticker else -1
 
     print(f"[DEBUG] 사용자 메시지: {user_msg}")
     print(f"[DEBUG] 추출된 ticker: {ticker}, 종목명: {stock_name}")
@@ -357,7 +355,6 @@ def chat_logic(req: ChatRequest, naver_client_id, naver_client_secret, NAME_TO_T
     print(f"[DEBUG] 주요 제품: {main_products}")
     print(f"[DEBUG] 수익률 - 1년: {data.get('return_1y')}%, 3년: {data.get('return_3y')}%")
     print(f"[DEBUG] 베타 - 1년: {beta_1y}, 3년: {beta_3y}")
-    print(f"[DEBUG] PER: {data.get('per')}, ROE: {data.get('roe')}, 부채비율: {data.get('debt_ratio')}")
 
     if stock_name:
         news_items = get_latest_news_naver(stock_name, naver_client_id, naver_client_secret)
@@ -368,7 +365,7 @@ def chat_logic(req: ChatRequest, naver_client_id, naver_client_secret, NAME_TO_T
         context_parts = [
             SYSTEM_PROMPT_TEMPLATE,
             CHAT_FORMAT_PROMPT,
-            f"부실 예측 결과: {'부실' if is_defaulted == 1 else '정상' if is_defaulted == 0 else '정보 없음'}"
+            f"부실 예측 결과: {'부실 기업' if is_defaulted == 1 else '정상 기업' if is_defaulted == 0 else '예측 결과가 없스니다 12월 결산이 아닐 수 있습니다'}"
         ]
 
         if main_products:
@@ -381,7 +378,23 @@ def chat_logic(req: ChatRequest, naver_client_id, naver_client_secret, NAME_TO_T
         if response and hasattr(response, 'text'):
             answer = response.text.strip()
         else:
-            answer = "부도예측 결과\n응답을 생성하지 못했습니다.\n"
+            answer = ""
+
+        # Gemini 응답이 부실 안내문이면 직접 답변 생성
+        if not answer or any(x in answer for x in [
+            "부실 예측 결과가 없습니다",
+            "답변이 어렵",
+            "정보가 없습니다",
+            "질문하신",
+            "제한적",
+            "불가",
+            "어렵",
+            "미제공",
+            "불가능",
+            "알 수 없",
+            "바로 가져올 수 없습니다"
+        ]):
+            answer = f"""**{stock_name or '기업명 미확인'}의 정보를 제공합니다**\n\n**부도 예측 결과**\n해당 기업은 {'부실 기업' if is_defaulted == 1 else '정상 기업' if is_defaulted == 0 else '예측 결과가 없습니다. 12월 결산이 아닐 수 있습니다.'}입니다. 투자에 주의가 필요합니다.\n\n**주요 매출 제품**\n{main_products or '정보를 불러올 없습니다.'}\n\n**부가 설명**\n{stock_info['description'] if stock_info and 'description' in stock_info else '설립일 및 개요 정보를 불러올 수 없습니다.'}\n"""
 
         if news_items:
             news_markdown = "\n\n**관련 뉴스**\n" + "\n".join(f"[{item['title']}]({item['link']})" for item in news_items)
@@ -409,11 +422,6 @@ def chat_logic(req: ChatRequest, naver_client_id, naver_client_secret, NAME_TO_T
     result = {
         "reply": answer,
         "name": stock_name,
-        "per": data.get("per"),
-        "roe": data.get("roe"),
-        "debt_ratio": data.get("debt_ratio"),
-        "sales": data.get("sales"),
-        "market_cap": data.get("market_cap"),
         "main_products": main_products,
         "return_1y": data.get("return_1y"),
         "return_3y": data.get("return_3y"),
