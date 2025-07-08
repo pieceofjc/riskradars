@@ -107,12 +107,19 @@ def extract_ticker(user_msg, NAME_TO_TICKER):
         conn = sqlite3.connect("rrdb.db")
         cursor = conn.cursor()
 
-        # 0. 입력 문장에 DB 회사명이 포함되어 있으면 바로 반환
+        # 0. 입력 문장에 DB 회사명이 포함되어 있으면 바로 반환 (대소문자/공백 무시, 가장 긴 회사명 우선)
+        user_msg_clean = user_msg.replace(" ", "").lower()
         cursor.execute("SELECT stock_code, 회사명 FROM corp_info")
         all_companies = cursor.fetchall()
+        candidates = []
         for code, name in all_companies:
-            if name in user_msg:
-                return code, name
+            name_clean = name.replace(" ", "").lower()
+            if name_clean in user_msg_clean:
+                candidates.append((code, name, len(name_clean)))
+        if candidates:
+            # 가장 긴 회사명 우선 반환
+            candidates.sort(key=lambda x: x[2], reverse=True)
+            return candidates[0][0], candidates[0][1]
 
         # 메시지에서 회사명 추출 (공백 제거 후 첫 번째 단어 또는 명사 추출)
         import re
